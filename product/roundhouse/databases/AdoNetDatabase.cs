@@ -74,6 +74,7 @@ namespace roundhouse.databases
             if (transaction != null)
             {
                 transaction.Commit();
+                transaction.Dispose();
                 transaction = null;
             }
             if (repository != null)
