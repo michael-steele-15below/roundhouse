@@ -24,6 +24,7 @@ namespace roundhouse.migrators
         private readonly bool error_on_one_time_script_changes;
         private bool running_in_a_transaction;
         private readonly bool is_running_all_any_time_scripts;
+        private readonly bool is_baseline;
 
         public DefaultDatabaseMigrator(Database database, CryptographicService crypto_provider, ConfigurationPropertyHolder configuration)
         {
@@ -36,6 +37,7 @@ namespace roundhouse.migrators
             output_path = configuration.OutputPath;
             error_on_one_time_script_changes = !configuration.WarnOnOneTimeScriptChanges;
             is_running_all_any_time_scripts = configuration.RunAllAnyTimeScripts;
+            is_baseline = configuration.Baseline;
         }
 
         public void initialize_connections()
@@ -179,22 +181,27 @@ namespace roundhouse.migrators
             if (this_is_an_environment_file_and_its_in_the_right_environment(script_name, environment)
                 && this_script_should_run(script_name, sql_to_run, run_this_script_once, run_this_script_every_time))
             {
-                Log.bound_to(this).log_an_info_event_containing(" Running {0} on {1} - {2}.", script_name, database.server_name, database.database_name);
+                Log.bound_to(this).log_an_info_event_containing(" {3} {0} on {1} - {2}.", script_name, database.server_name, database.database_name,
+                                        is_baseline ? "BASELINING: Recording" : "Running");
 
-                foreach (var sql_statement in get_statements_to_run(sql_to_run))
+                if (!is_baseline)
                 {
-                    try
+                    foreach (var sql_statement in get_statements_to_run(sql_to_run))
                     {
-                        database.run_sql(sql_statement, connection_type);
-                    }
-                    catch (Exception ex)
-                    {
-                        database.rollback();
-                        record_script_in_scripts_run_errors_table(script_name, sql_to_run, sql_statement, ex.Message, repository_version, repository_path);
-                        database.close_connection();
-                        throw;
+                        try
+                        {
+                            database.run_sql(sql_statement, connection_type);
+                        }
+                        catch (Exception ex)
+                        {
+                            database.rollback();
+                            record_script_in_scripts_run_errors_table(script_name, sql_to_run, sql_statement, ex.Message, repository_version, repository_path);
+                            database.close_connection();
+                            throw;
+                        }
                     }
                 }
+
                 record_script_in_scripts_run_table(script_name, sql_to_run, run_this_script_once, version_id);
                 this_sql_ran = true;
             }
@@ -317,7 +324,7 @@ namespace roundhouse.migrators
             {
                 return false;
             }
-            
+
             return true;
         }
 
